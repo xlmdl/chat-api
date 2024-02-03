@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"log"
 	"net/http"
 	"one-api/common"
 	"one-api/model"
@@ -84,33 +83,52 @@ func RootAuth() func(c *gin.Context) {
 	}
 }
 
+// processAuthHeader 处理认证头部并返回key和parts
+func processAuthHeader(headerValue string) (string, []string) {
+	headerValue = strings.TrimPrefix(headerValue, "Bearer ")
+	parts := strings.Split(strings.TrimPrefix(headerValue, "sk-"), "-")
+	return parts[0], parts
+}
+
+// getModelForPath 根据请求的URL路径返回相应的模型。
+func getModelForPath(path string) string {
+	// 定义一个路径前缀到模型名称的映射
+	pathToModel := map[string]string{
+		"/v1/moderations":          "text-moderation-stable",
+		"/v1/images/generations":   "dall-e-2",
+		"/v1/audio/speech":         "tts-1",
+		"/v1/audio/transcriptions": "whisper-1",
+		"/v1/audio/translations":   "whisper-1",
+	}
+
+	if strings.HasPrefix(path, "/mj") {
+		return "midjourney"
+	}
+
+	for prefix, model := range pathToModel {
+		if strings.HasPrefix(path, prefix) {
+			return model
+		}
+	}
+
+	return ""
+}
+
 func TokenAuth() func(c *gin.Context) {
 	return func(c *gin.Context) {
-		isMidJourneyKey := false
-		key := c.Request.Header.Get("Authorization")
-		parts := make([]string, 0)
-		key = strings.TrimPrefix(key, "Bearer ")
+		var err error
+		key, parts := processAuthHeader(c.Request.Header.Get("Authorization"))
 		if key == "" || key == "midjourney-proxy" {
-			key = c.Request.Header.Get("mj-api-secret")
-			isMidJourneyKey = true
-			key = strings.TrimPrefix(key, "Bearer ")
-			key = strings.TrimPrefix(key, "sk-")
-			parts = strings.Split(key, "-")
-			key = parts[0]
-		} else {
-			key = strings.TrimPrefix(key, "sk-")
-			parts = strings.Split(key, "-")
-			key = parts[0]
+			key, parts = processAuthHeader(c.Request.Header.Get("mj-api-secret"))
 		}
-		var modelRequest ModelRequest
-		if !isMidJourneyKey {
-			if err := common.UnmarshalBodyReusable(c, &modelRequest); err != nil {
-				log.Printf("解析请求体时发生错误：%v", err)
-				abortWithMessage(c, http.StatusBadRequest, "请求体解析失败，请确保提交了有效的JSON")
+
+		modelRequest := ModelRequest{Model: getModelForPath(c.Request.URL.Path)}
+		if !strings.HasPrefix(c.Request.URL.Path, "/v1/audio/transcriptions") && c.Request.Method != http.MethodGet {
+			err = common.UnmarshalBodyReusable(c, &modelRequest)
+			if err != nil {
+				abortWithMessage(c, http.StatusBadRequest, "无效的请求: "+err.Error())
 				return
 			}
-		} else {
-			modelRequest.Model = "midjourney"
 		}
 		token, err := model.ValidateUserToken(key, modelRequest.Model)
 		if err != nil {

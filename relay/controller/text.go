@@ -42,6 +42,7 @@ func RelayTextHelper(c *gin.Context, relayMode int) *openai.ErrorWithStatusCode 
 	var isModelMapped bool
 	textRequest.Model, isModelMapped = util.GetMappedModelName(textRequest.Model, meta.ModelMapping)
 	apiType := constant.ChannelType2APIType(meta.ChannelType)
+
 	fullRequestURL, err := GetRequestURL(c.Request.URL.String(), apiType, relayMode, meta, &textRequest)
 	if err != nil {
 		common.LogError(ctx, fmt.Sprintf("util.GetRequestURL failed: %s", err.Error()))
@@ -149,10 +150,18 @@ func RelayTextHelper(c *gin.Context, relayMode int) *openai.ErrorWithStatusCode 
 		return openai.ErrorWrapper(err, "decrease_user_quota_failed", http.StatusInternalServerError)
 	}
 	if userQuota > 100*preConsumedQuota {
-		// in this case, we do not pre-consume quota
-		// because the user has enough quota
 		preConsumedQuota = 0
 		common.LogInfo(c.Request.Context(), fmt.Sprintf("user %d has enough quota %d, trusted and no need to pre-consume", meta.UserId, userQuota))
+		if !meta.TokenUnlimited {
+			tokenQuota := meta.TokenQuota
+			if tokenQuota > 100*preConsumedQuota {
+				preConsumedQuota = 0
+				common.LogInfo(c.Request.Context(), fmt.Sprintf("user %d quota %d and token %d quota %d are enough, trusted and no need to pre-consume", meta.UserId, userQuota, meta.TokenId, tokenQuota))
+			}
+		} else {
+			preConsumedQuota = 0
+			common.LogInfo(c.Request.Context(), fmt.Sprintf("user %d with unlimited token has enough quota %d, trusted and no need to pre-consume", meta.UserId, userQuota))
+		}
 	}
 	if preConsumedQuota > 0 {
 		userQuota, err = model.PreConsumeTokenQuota(meta.TokenId, preConsumedQuota)

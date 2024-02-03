@@ -22,13 +22,15 @@ var ModelRatio = map[string]float64{
 	"gpt-4-32k":                 30,
 	"gpt-4-32k-0314":            30,
 	"gpt-4-32k-0613":            30,
-	"gpt-4-1106-preview":        10, // $0.01 / 1K tokens
-	"gpt-4-vision":              10,
-	"gpt-4-vision-preview":      10,   // $0.01 / 1K tokens
-	"gpt-4-1106-vision-preview": 10,   // $0.01 / 1K tokens
+	"gpt-4-1106-preview":        5, // $0.01 / 1K tokens
+	"gpt-4-0125-preview":        5, // $0.01 / 1K tokens
+	"gpt-4-turbo-preview":       5,
+	"gpt-4-vision":              5,
+	"gpt-4-vision-preview":      5,    // $0.01 / 1K tokens
+	"gpt-4-1106-vision-preview": 5,    // $0.01 / 1K tokens
 	"gpt-3.5-turbo":             0.75, // $0.0015 / 1K tokens
-	"gpt-3.5-turbo-0301":        0.75,
 	"gpt-3.5-turbo-0613":        0.75,
+	"gpt-3.5-turbo-0125":        0.25,
 	"gpt-3.5-turbo-16k":         1.5, // $0.003 / 1K tokens
 	"gpt-3.5-turbo-16k-0613":    1.5,
 	"gpt-3.5-turbo-instruct":    0.75, // $0.0015 / 1K tokens
@@ -49,8 +51,11 @@ var ModelRatio = map[string]float64{
 	"davinci":                   10,
 	"curie":                     10,
 	"babbage":                   10,
-	"ada":                       10,
+	"ada":                       0.25,
+	"ada v2":                    0.25,
 	"text-embedding-ada-002":    0.05,
+	"text-embedding-3-small":    0.01,
+	"text-embedding-3-large":    0.06,
 	"text-search-ada-doc-001":   10,
 	"text-moderation-stable":    0.1,
 	"text-moderation-latest":    0.1,
@@ -79,6 +84,7 @@ var ModelRatio = map[string]float64{
 	"semantic_similarity_s1_v1": 0.0715, // ¥0.001 / 1k tokens
 	"hunyuan":                   7.143,  // ¥0.1 / 1k tokens  // https://cloud.tencent.com/document/product/1729/97731#e0e6be58-60c8-469f-bdeb-6c264ce3b4d0
 }
+var CompletionRatio = map[string]float64{}
 
 var DalleSizeRatios = map[string]map[string]float64{
 	"dall-e-2": {
@@ -163,10 +169,28 @@ func GetModelRatio2(name string) (float64, bool) {
 	return ratio, ok
 }
 
+func CompletionRatio2JSONString() string {
+	jsonBytes, err := json.Marshal(CompletionRatio)
+	if err != nil {
+		SysError("error marshalling completion ratio: " + err.Error())
+	}
+	return string(jsonBytes)
+}
+func UpdateCompletionRatioByJSONString(jsonStr string) error {
+	CompletionRatio = make(map[string]float64)
+	return json.Unmarshal([]byte(jsonStr), &CompletionRatio)
+}
+
 func GetCompletionRatio(name string) float64 {
+	if ratio, ok := CompletionRatio[name]; ok {
+		return ratio
+	}
 	if strings.HasPrefix(name, "gpt-3.5") {
 		if strings.HasSuffix(name, "1106") {
 			return 2
+		}
+		if strings.HasSuffix(name, "0125") {
+			return 3
 		}
 		if name == "gpt-3.5-turbo" || name == "gpt-3.5-turbo-16k" {
 			// TODO: clear this after 2023-12-11
